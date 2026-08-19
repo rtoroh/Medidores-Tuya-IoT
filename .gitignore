@@ -1,0 +1,11 @@
+# Credenciales reales de Tuya (NO subir)
+config.json
+
+# Python
+__pycache__/
+*.pyc
+
+# Local
+server.pid
+history.db*
+*.sqlite3

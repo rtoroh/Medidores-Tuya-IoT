@@ -1,0 +1,40 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: tuya-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: tuya
+      POSTGRES_PASSWORD: tuya
+      POSTGRES_DB: tuyameters
+      TZ: America/Bogota
+      PGTZ: America/Bogota
+    ports:
+      - "5435:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tuya -d tuyameters"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  app:
+    build: .
+    container_name: tuya-dashboard
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://tuya:tuya@db:5432/tuyameters
+      TZ: America/Bogota
+      PGTZ: America/Bogota
+      PORT: "5000"
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./config.json:/app/config.json:ro
+
+volumes:
+  pgdata:

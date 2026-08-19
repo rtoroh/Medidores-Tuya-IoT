@@ -1,0 +1,16 @@
+{
+    "region": "us",
+    "apiKey": "TU_API_KEY",
+    "apiSecret": "TU_API_SECRET",
+    "refreshSeconds": 15,
+    "deviceFilter": [
+        "device_id_1",
+        "device_id_2"
+    ],
+    "deviceNames": {
+        "device_id_1": "medidor_1",
+        "device_id_2": "medidor_2"
+    },
+    "localRead": true,
+    "lanIpMap": {}
+}

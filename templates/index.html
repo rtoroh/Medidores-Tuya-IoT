@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tuya Meter Dashboard</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --panel: #1e293b;
+    --panel2: #334155;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --energy: #38bdf8;
+    --climate: #4ade80;
+    --other: #94a3b8;
+    --danger: #f87171;
+    --ok: #22c55e;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: "Segoe UI", system-ui, sans-serif; min-height: 100vh;
+  }
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 24px; background: var(--panel); border-bottom: 1px solid var(--panel2);
+    flex-wrap: wrap; gap: 10px;
+  }
+  header h1 { font-size: 20px; font-weight: 600; }
+  header .sub { color: var(--muted); font-size: 13px; }
+  .badges { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .badge {
+    font-size: 12px; padding: 5px 10px; border-radius: 999px;
+    background: var(--panel2); color: var(--muted); white-space: nowrap;
+  }
+  .badge.ok { background: rgba(34,197,94,.15); color: var(--ok); }
+  .badge.err { background: rgba(248,113,113,.15); color: var(--danger); }
+  button {
+    background: var(--panel2); color: var(--text); border: 1px solid #475569;
+    padding: 7px 14px; border-radius: 8px; cursor: pointer; font-size: 13px;
+  }
+  button:hover { background: #475569; }
+  button.primary { background: #0284c7; border-color: #0284c7; }
+  button.primary:hover { background: #0369a1; }
+  main { padding: 24px; max-width: 1400px; margin: 0 auto; }
+  .hint {
+    background: var(--panel); border: 1px solid var(--panel2); border-radius: 12px;
+    padding: 20px; margin-bottom: 20px; line-height: 1.6;
+  }
+  .hint h2 { font-size: 16px; margin-bottom: 10px; color: var(--energy); }
+  .hint ol { margin-left: 20px; }
+  .hint code {
+    background: var(--panel2); padding: 2px 6px; border-radius: 5px;
+    font-family: Consolas, monospace; font-size: 13px;
+  }
+  .grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 16px;
+  }
+  .card {
+    background: var(--panel); border: 1px solid var(--panel2); border-radius: 14px;
+    padding: 16px; position: relative; overflow: hidden;
+  }
+  .card::before {
+    content: ""; position: absolute; top: 0; left: 0; right: 0; height: 4px;
+    background: var(--other);
+  }
+  .card.k-energy::before { background: var(--energy); }
+  .card.k-climate::before { background: var(--climate); }
+  .card.k-other::before { background: var(--other); }
+  .card .name { font-size: 16px; font-weight: 600; margin-bottom: 2px; }
+  .card .meta { color: var(--muted); font-size: 12px; margin-bottom: 10px; }
+  .card .online { float: right; font-size: 11px; padding: 3px 8px; border-radius: 999px; }
+  .online.on { background: rgba(34,197,94,.15); color: var(--ok); }
+  .online.off { background: rgba(248,113,113,.15); color: var(--danger); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
+  td { padding: 5px 4px; border-bottom: 1px solid #2b3850; overflow-wrap: anywhere;
+       word-break: break-word; vertical-align: top; }
+  td:first-child { width: 50%; color: var(--muted); }
+  td:last-child { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; color: var(--text); }
+  tr:last-child td { border-bottom: none; }
+  .time { color: var(--muted); font-size: 11px; margin-top: 8px; text-align: right; }
+  .error { color: var(--danger); font-size: 12px; margin-top: 8px; }
+  details { margin-top: 10px; }
+  summary { color: var(--muted); font-size: 11px; cursor: pointer; }
+  pre { background: #0b1220; padding: 8px; border-radius: 8px; font-size: 11px;
+        overflow-x: auto; max-height: 200px; }
+  .empty { color: var(--muted); text-align: center; padding: 40px; }
+  .foot { color: var(--muted); font-size: 11px; text-align: center; padding: 20px; }
+  .live-dot { display:inline-block; width:8px; height:8px; border-radius:50%;
+              background: var(--ok); margin-right:6px; animation: pulse 1.2s infinite; }
+  @keyframes pulse { 0%{opacity:1} 50%{opacity:.35} 100%{opacity:1} }
+  .kind-tag { font-size: 11px; color: var(--muted); }
+  .src-lan { color: var(--energy); font-weight: 600; }
+  .src-cloud { color: var(--muted); }
+  .ctl {
+    background: var(--panel2); color: var(--text); border: 1px solid #475569;
+    padding: 7px 10px; border-radius: 8px; font-size: 13px;
+  }
+  canvas { max-width: 100%; }
+  .chart-wrap { position: relative; height: 320px; }
+  .chart-wrap canvas { position: absolute; top: 0; left: 0; width: 100% !important; height: 100% !important; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Tuya Meter Dashboard</h1>
+    <div class="sub" id="sub">Medidores de energia y sensores de temperatura/humedad</div>
+  </div>
+  <div class="badges">
+    <span class="badge" id="badge-region">region: -</span>
+    <span class="badge" id="badge-conn">sin conexion</span>
+    <span class="badge" id="badge-refresh">auto-refresh: -s</span>
+    <button class="primary" id="btn-refresh">Actualizar ahora</button>
+    <button id="btn-reload">Recargar config</button>
+  </div>
+</header>
+
+<main>
+  <div class="hint" id="hint-setup" style="display:none">
+    <h2>Configuracion pendiente</h2>
+    <p>Edita <code>config.json</code> en <code>tuya-meter-dashboard\</code> con tus API keys y luego pulsa
+    <b>Recargar config</b>. Para obtener las keys:</p>
+    <ol>
+      <li>Entra a <a href="https://iot.tuya.com" target="_blank">iot.tuya.com</a> e inicia sesion con la misma cuenta de la app.</li>
+      <li>Cloud Development &rarr; <b>Create Cloud Project</b>. Selecciona el data center <b>Western America</b> (us) y como
+          metodo de desarrollo <b>Smart Home / Smart Life</b>.</li>
+      <li>En el proyecto: <b>Devices &rarr; Link App Account</b>. Escanea el codigo QR con la app
+          <b>Smart Life / Tuya</b> (Ajustes &rarr; Vincular cuenta).</li>
+      <li>Ve a <b>Overview</b> y copia el <b>Access ID / Client ID</b> y <b>Access Secret / Client Secret</b>.</li>
+      <li>Pegalos en <code>config.json</code> (&quot;apiKey&quot; / &quot;apiSecret&quot;) y recarga esta pagina.</li>
+    </ol>
+  </div>
+
+  <div id="status-line" class="empty">Cargando dispositivos...</div>
+  <div class="grid" id="grid"></div>
+
+  <div style="margin-top:28px">
+    <h2 style="font-size:16px;color:var(--energy);margin-bottom:4px">Historico de consumo (kWh/dia)</h2>
+    <div style="color:var(--muted);font-size:12px;margin-bottom:10px">
+      Se registra el totalizador cada vez que se consulta. El historico crece a partir de hoy.
+      <span id="hist-meta" style="color:var(--muted)"></span>
+    </div>
+    <div id="history-table" style="background:var(--panel);border:1px solid var(--panel2);border-radius:14px;padding:16px;overflow-x:auto"></div>
+  </div>
+
+  <div style="margin-top:28px">
+    <h2 style="font-size:16px;color:var(--energy);margin-bottom:4px">Graficas</h2>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin:10px 0">
+      <select id="sel-device" class="ctl"></select>
+      <select id="sel-var" class="ctl"></select>
+      <select id="sel-range" class="ctl">
+        <option value="60">1 hora</option>
+        <option value="360">6 horas</option>
+        <option value="1440" selected>24 horas</option>
+        <option value="10080">7 dias</option>
+      </select>
+    </div>
+    <div style="background:var(--panel);border:1px solid var(--panel2);border-radius:14px;padding:16px;margin-bottom:16px">
+      <div style="color:var(--muted);font-size:12px;margin-bottom:8px" id="chart-live-title">Serie temporal</div>
+      <div class="chart-wrap"><canvas id="chart-live"></canvas></div>
+    </div>
+    <div style="background:var(--panel);border:1px solid var(--panel2);border-radius:14px;padding:16px">
+      <div style="color:var(--muted);font-size:12px;margin-bottom:8px">Consumo diario (kWh) por medidor</div>
+      <div class="chart-wrap"><canvas id="chart-daily"></canvas></div>
+    </div>
+  </div>
+</main>
+<div class="foot">Los datos provienen de la nube de Tuya (ultimo estado reportado por cada dispositivo).</div>
+
+<script src="/static/chart.umd.min.js"></script>
+<script>
+const REFRESH = {{ refresh }};
+let devices = [];
+let lastFull = 0;
+
+const $ = id => document.getElementById(id);
+
+function setBadgeConn(ok, msg) {
+  const b = $("badge-conn");
+  b.textContent = msg;
+  b.className = "badge " + (ok ? "ok" : "err");
+}
+
+function setHint(configured) {
+  $("hint-setup").style.display = configured ? "none" : "block";
+}
+
+function timeAgo(ts) {
+  if (!ts) return "";
+  const s = Math.floor((Date.now()/1000) - ts);
+  if (s < 5) return "hace un momento";
+  if (s < 60) return "hace " + s + "s";
+  const m = Math.floor(s/60);
+  return "hace " + m + "m";
+}
+
+function card(d) {
+  const kind = d.kind;
+  const online = d.online;
+  const rows = (d.readings || []).map(r => {
+    const v = (r.value === null || r.value === undefined) ? "-" : String(r.value);
+    const short = v.length > 45 ? v.slice(0, 45) + "..." : v;
+    const title = v.length > 45 ? ` title="${v.replace(/"/g, "&quot;")}"` : "";
+    return `<tr><td>${r.label}</td><td${title}>${short}</td></tr>`;
+  }).join("");
+  const errorHtml = d.error ? `<div class="error">${d.error}</div>` : "";
+  const meta = [d.categoryLabel, d.product, d.ip ? "IP " + d.ip : null, d.mac ? "MAC " + d.mac : null]
+    .filter(Boolean).join(" &middot; ");
+  const srcHtml = d.source
+    ? `<span class="src-${d.source === "LAN" ? "lan" : "cloud"}">${d.source === "LAN" ? "&#9673; lectura local" : "&#9672; ultimo reportado"}</span>`
+    : "";
+  const raw = JSON.stringify(d.readings.map(r => ({ code: r.code, value: r.raw })));
+  return `
+  <div class="card k-${kind}">
+    <span class="online ${online ? "on" : "off"}">${online ? "en linea" : "sin conexion"}</span>
+    <div class="name">${d.name}</div>
+    <div class="meta">${meta}</div>
+    ${d.readings.length ? `<table>${rows}</table>` : `<div class="empty">sin datos</div>`}
+    ${errorHtml}
+    <div class="time">${srcHtml} &middot; ${timeAgo(d.fetchedAt)}</div>
+    <details><summary>JSON crudo</summary><pre>${raw}</pre></details>
+  </div>`;
+}
+
+function render() {
+  const grid = $("grid");
+  if (!devices.length) {
+    $("status-line").textContent = "No hay dispositivos. Verifica tus credenciales y que la cuenta de la app tenga los medidores vinculados.";
+    $("status-line").style.display = "block";
+    grid.innerHTML = "";
+    return;
+  }
+  $("status-line").style.display = "none";
+  const sorted = devices.slice().sort((a,b) => (a.kind.localeCompare(b.kind)) || a.name.localeCompare(b.name));
+  grid.innerHTML = sorted.map(card).join("");
+  fillChartControls();
+}
+
+const CHART_COLORS = ["#38bdf8", "#4ade80", "#fbbf24", "#f87171", "#c084fc", "#34d399", "#fb923c", "#a3e635"];
+const VAR_OPTIONS = [
+  ["forward_energy_total", "Energia total (kWh)"],
+  ["phase_a.voltage", "Voltaje (V)"],
+  ["phase_a.electricCurrent", "Corriente (A)"],
+  ["phase_a.power", "Potencia (kW)"],
+  ["phase_a.forwardEnergy", "Energia fase (kWh)"]
+];
+let chartLive = null, chartDaily = null;
+
+function fillChartControls() {
+  const dev = $("sel-device");
+  if (dev.options.length === devices.length) return;
+  const prev = dev.value;
+  dev.innerHTML = "";
+  devices.forEach(d => {
+    const o = document.createElement("option");
+    o.value = d.id; o.textContent = d.name; dev.appendChild(o);
+  });
+  if (prev) dev.value = prev;
+  const vr = $("sel-var");
+  vr.innerHTML = "";
+  VAR_OPTIONS.forEach(([code, label]) => {
+    const o = document.createElement("option");
+    o.value = code; o.textContent = label; vr.appendChild(o);
+  });
+}
+
+async function loadChart() {
+  if (!window.Chart || !devices.length) return;
+  const deviceId = $("sel-device").value;
+  const code = $("sel-var").value;
+  const minutes = $("sel-range").value;
+  const title = $("chart-live-title");
+  try {
+    const r = await fetch(`/api/readings?device_id=${encodeURIComponent(deviceId)}&code=${encodeURIComponent(code)}&minutes=${minutes}`);
+    const d = await r.json();
+    const pts = d.points || [];
+    const labels = pts.map(p => p.ts.slice(11, 16));
+    const div = ["forward_energy_total", "balance_energy", "charge_energy"].includes(code) ? 100 : 1;
+    const vals = pts.map(p => (typeof p.value === "number") ? p.value / div : null);
+    const devName = (devices.find(x => x.id === deviceId) || {}).name || deviceId;
+    title.textContent = `Serie temporal: ${devName} · ${code} · ${pts.length} puntos`;
+    if (chartLive) chartLive.destroy();
+    chartLive = new Chart($("chart-live"), {
+      type: "line",
+      data: {
+        labels,
+        datasets: [{
+          label: code, data: vals,
+          borderColor: "#38bdf8", backgroundColor: "rgba(56,189,248,.15)",
+          fill: true, pointRadius: 0, tension: .25, spanGaps: true
+        }]
+      },
+      options: {
+        animation: false, responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          y: { grid: { color: "rgba(148,163,184,.15)" } },
+          x: { grid: { display: false }, ticks: { maxTicksLimit: 12 } }
+        }
+      }
+    });
+  } catch (e) { title.textContent = "Grafica no disponible: " + e.message; }
+}
+
+async function loadDailyChart() {
+  if (!window.Chart) return;
+  try {
+    const r = await fetch("/api/history?days=7");
+    const d = await r.json();
+    if (!d.ok) return;
+    const hist = d.history || {};
+    const names = Object.keys(hist);
+    const dates = [...new Set(Object.values(hist).flat().map(x => x.date))].sort();
+    if (!dates.length) return;
+    const datasets = names.map((n, i) => ({
+      label: n,
+      data: dates.map(dt => ((hist[n].find(x => x.date === dt) || {}).kwh) ?? 0),
+      backgroundColor: CHART_COLORS[i % CHART_COLORS.length],
+      borderRadius: 3
+    }));
+    if (chartDaily) chartDaily.destroy();
+    chartDaily = new Chart($("chart-daily"), {
+      type: "bar",
+      data: { labels: dates, datasets },
+      options: {
+        animation: false, responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: "bottom", labels: { color: "#94a3b8", boxWidth: 12, font: { size: 10 } } } },
+        scales: {
+          x: { grid: { display: false } },
+          y: { beginAtZero: true, grid: { color: "rgba(148,163,184,.15)" } }
+        }
+      }
+    });
+  } catch (e) { /* no bloquea */ }
+}
+
+async function load(forceRefresh) {
+  const url = forceRefresh ? "/api/refresh" : "/api/devices";
+  try {
+    const resp = await fetch(url);
+    const data = await resp.json();
+    if (!data.ok) throw new Error(data.error || "error");
+    devices = data.devices || [];
+    setBadgeConn(true, "conectado a la nube Tuya");
+    render();
+    loadChart();
+    loadDailyChart();
+  } catch (e) {
+    setBadgeConn(false, "error de conexion");
+    $("status-line").textContent = "No se pudo consultar la nube Tuya: " + e.message;
+    $("status-line").style.display = "block";
+  }
+}
+
+async function loadConfig() {
+  try {
+    const r = await fetch("/api/config");
+    const c = await r.json();
+    $("badge-region").textContent = "region: " + c.region;
+    $("badge-refresh").textContent = "auto-refresh: " + c.refreshSeconds + "s";
+    setHint(c.configured);
+    if (c.configured) await load(true);
+    else {
+      $("status-line").textContent = "Esperando credenciales en config.json...";
+      $("status-line").style.display = "block";
+    }
+  } catch (e) {
+    setBadgeConn(false, "sin servidor");
+  }
+}
+
+function renderHistory(h) {
+  const box = $("history-table");
+  const meta = $("hist-meta");
+  const names = Object.keys(h.history || {});
+  if (!names.length) {
+    box.innerHTML = '<div class="empty">Sin datos aun. El historico se construye con cada consulta.</div>';
+    meta.textContent = "";
+    return;
+  }
+  const allDates = [...new Set(Object.values(h.history).flat().map(d => d.date))].sort().reverse();
+  let html = '<table style="table-layout:auto;min-width:100%"><thead><tr><td>Fecha</td>';
+  names.forEach(n => html += `<td>${n}</td>`);
+  html += '<td style="font-weight:700">Total</td></tr></thead><tbody>';
+  allDates.forEach(date => {
+    let rowTotal = 0, any = false;
+    html += `<tr><td>${date}</td>`;
+    names.forEach(n => {
+      const row = (h.history[n] || []).find(d => d.date === date);
+      if (row) { any = true; rowTotal += row.kwh; html += `<td>${row.kwh.toFixed(2)}</td>`; }
+      else html += "<td>-</td>";
+    });
+    html += `<td style="font-weight:700">${any ? rowTotal.toFixed(2) : "-"}</td></tr>`;
+  });
+  html += "</tbody></table>";
+  box.innerHTML = html;
+  meta.textContent = "· " + h.totalRows + " lecturas registradas";
+}
+
+async function loadHistory() {
+  try {
+    const r = await fetch("/api/history?days=14");
+    const h = await r.json();
+    if (h.ok) renderHistory(h);
+  } catch (e) { /* no bloquea el dashboard */ }
+}
+
+$("btn-refresh").onclick = () => load(true);
+$("btn-reload").onclick = async () => {
+  await fetch("/api/reload-config");
+  devices = [];
+  await loadConfig();
+};
+$("sel-device").onchange = loadChart;
+$("sel-var").onchange = loadChart;
+$("sel-range").onchange = loadChart;
+
+// auto-refresh
+setInterval(() => {
+  if (devices.length) load(false);
+}, REFRESH * 1000);
+
+loadConfig();
+loadHistory();
+loadDailyChart();
+</script>
+</body>
+</html>
