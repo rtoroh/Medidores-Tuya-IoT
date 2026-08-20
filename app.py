@@ -25,9 +25,11 @@ def _no_cache(resp):
 _lock = threading.Lock()
 _reader = None
 _reader_error = None
-_status_cache = {}          # device_id -> {"source": ..., "items": [...], "at": ts}
+_status_cache = {}          # device_id -> {"source","items","at"[,"error"]}
 _devices_cache = None
 _devices_fetched_at = 0
+_force_all = False
+_wake = threading.Event()
 
 
 db.init()
@@ -240,7 +242,7 @@ def fetch_status(device):
     device_id = device.get("id", "")
     with _lock:
         cached = _status_cache.get(device_id)
-        if cached and time.time() - cached["at"] < CONFIG.get("refreshSeconds", 15):
+        if cached and not cached.get("error") and time.time() - cached["at"] < CONFIG.get("refreshSeconds", 15):
             return cached["source"], cached["items"]
     reader = get_reader()
     if reader is None:
@@ -254,6 +256,60 @@ def fetch_status(device):
             "source": source, "items": items, "at": time.time(),
         }
     return source, items
+
+
+def cached_status(device_id):
+    """Ultima lectura en cache, sin ir a la red."""
+    with _lock:
+        c = _status_cache.get(device_id)
+    if not c:
+        return None, [], None
+    return c.get("source"), c.get("items") or [], c.get("error")
+
+
+def _store_error(device_id, msg):
+    with _lock:
+        prev = _status_cache.get(device_id) or {}
+        _status_cache[device_id] = {**prev, "error": msg, "at": time.time()}
+
+
+def _poll_loop():
+    """Hilo de fondo: mantiene la cache de lecturas fresca para que
+    /api/devices siempre responda al instante, sin importar cuantos
+    medidores haya configurados."""
+    while True:
+        interval = max(int(CONFIG.get("refreshSeconds", 15)), 10)
+        try:
+            devices = fetch_devices()
+        except Exception:
+            _wake.wait(5)
+            _wake.clear()
+            continue
+        with _lock:
+            force = _force_all
+            globals()["_force_all"] = False
+        started = time.time()
+        for d in devices:
+            did = d.get("id", "")
+            with _lock:
+                c = _status_cache.get(did)
+                stale = c is None or force or (time.time() - c["at"] >= interval)
+            if not stale:
+                continue
+            try:
+                fetch_status(d)
+            except TuyaReaderError as e:
+                _store_error(did, str(e))
+            except Exception as e:
+                _store_error(did, "%s: %s" % (type(e).__name__, e))
+            time.sleep(0.3)
+        elapsed = time.time() - started
+        _wake.wait(max(2.0, interval - elapsed))
+        _wake.clear()
+
+
+def start_poller():
+    threading.Thread(target=_poll_loop, daemon=True, name="tuya-poller").start()
 
 
 def _normalize_mac(mac):
@@ -278,11 +334,10 @@ def build_device_view(device):
         device["ip"] = ip
 
     try:
-        source, items = fetch_status(device)
-    except TuyaReaderError as e:
-        error = str(e)
+        source, items, cached_err = cached_status(device_id)
+        error = cached_err if (items or cached_err) else "esperando primera lectura..."
     except Exception as e:
-        error = "%s: %s" % (type(e).__name__, e)
+        source, items, error = None, [], "%s: %s" % (type(e).__name__, e)
 
     readings = []
     for dp in flatten_items(items):
@@ -402,28 +457,35 @@ def api_readings():
 
 @app.route("/api/refresh")
 def api_refresh():
+    global _force_all
     try:
         devices = fetch_devices(force=True)
     except TuyaReaderError as e:
         return jsonify({"ok": False, "error": str(e)}), 502
     with _lock:
-        _status_cache = {}
+        _force_all = True
+    _wake.set()
     views = [build_device_view(d) for d in devices]
     return jsonify({"ok": True, "devices": views})
 
 
 @app.route("/api/reload-config")
 def api_reload_config():
-    global CONFIG, _status_cache
+    global CONFIG, _status_cache, _force_all
     CONFIG = load_config()
     reset_reader()
     with _lock:
         _status_cache = {}
+        _force_all = True
+    _wake.set()
     return jsonify({"ok": True, "config": {
         "configured": bool(CONFIG.get("apiKey") and CONFIG.get("apiSecret")),
         "region": CONFIG.get("region"),
         "localRead": bool(CONFIG.get("localRead", True)),
     }})
+
+
+start_poller()
 
 
 if __name__ == "__main__":
