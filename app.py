@@ -36,8 +36,19 @@ db.init()
 
 
 def load_config():
-    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-        cfg = json.load(f)
+    try:
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            cfg = json.load(f)
+    except FileNotFoundError:
+        cfg = {}
+        # Fallback: intenta con config.example.json si existe
+        example = os.path.join(BASE_DIR, "config.example.json")
+        if os.path.exists(example):
+            try:
+                with open(example, "r", encoding="utf-8") as f:
+                    cfg = json.load(f)
+            except Exception:
+                pass
     cfg.setdefault("region", "us")
     cfg.setdefault("apiKey", "")
     cfg.setdefault("apiSecret", "")
@@ -47,6 +58,14 @@ def load_config():
     cfg.setdefault("deviceNames", {})
     cfg["apiKey"] = os.environ.get("TUYA_API_KEY") or cfg.get("apiKey", "")
     cfg["apiSecret"] = os.environ.get("TUYA_API_SECRET") or cfg.get("apiSecret", "")
+    # Permite configurar filtros/nombres también por env (JSON)
+    for k in ("deviceFilter", "deviceNames", "lanIpMap"):
+        v = os.environ.get(f"TUYA_{k.upper()}")
+        if v:
+            try:
+                cfg[k] = json.loads(v)
+            except Exception:
+                pass
     return cfg
 
 

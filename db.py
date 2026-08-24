@@ -8,9 +8,11 @@ import psycopg
 from psycopg.rows import dict_row
 
 TZ = ZoneInfo("America/Bogota")
-DATABASE_URL = os.environ.get(
-    "DATABASE_URL", "postgresql://tuya:tuya@localhost:5435/tuyameters"
-)
+_raw_url = os.environ.get("DATABASE_URL", "postgresql://tuya:tuya@localhost:5435/tuyameters")
+# Coolify entrega postgres://  -> psycopg espera postgresql://
+if _raw_url.startswith("postgres://"):
+    _raw_url = "postgresql://" + _raw_url[len("postgres://"):]
+DATABASE_URL = _raw_url
 
 
 def _conn():
