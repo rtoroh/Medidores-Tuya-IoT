@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gráficas — Tuya Meter Dashboard</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --panel: #1e293b;
+    --panel2: #334155;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --energy: #38bdf8;
+    --ok: #22c55e;
+    --danger: #f87171;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: "Segoe UI", system-ui, sans-serif; min-height: 100vh; }
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 24px; background: var(--panel); border-bottom: 1px solid var(--panel2);
+    flex-wrap: wrap; gap: 10px;
+  }
+  header h1 { font-size: 20px; font-weight: 600; }
+  header .sub { color: var(--muted); font-size: 13px; }
+  .nav-tabs { display:flex; gap:8px; }
+  .nav-tab { padding:6px 14px; border-radius:8px; text-decoration:none; font-size:13px; border:1px solid transparent; color:var(--muted); }
+  .nav-tab.active { background:var(--panel2); color:var(--text); border-color:#475569; }
+  .nav-tab:hover { background:#334155; color:var(--text); }
+  .badges { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .badge { font-size: 12px; padding: 5px 10px; border-radius: 999px; background: var(--panel2); color: var(--muted); white-space: nowrap; }
+  .badge.ok { background: rgba(34,197,94,.15); color: var(--ok); }
+  .badge.err { background: rgba(248,113,113,.15); color: var(--danger); }
+  main { padding: 24px; max-width: 1400px; margin: 0 auto; }
+  .ctl { background: var(--panel2); color: var(--text); border: 1px solid #475569; padding: 7px 10px; border-radius: 8px; font-size: 13px; }
+  canvas { max-width: 100%; }
+  .chart-wrap { position: relative; height: 320px; }
+  .chart-wrap canvas { position: absolute; top: 0; left: 0; width: 100% !important; height: 100% !important; }
+  .grafana-box { background: var(--panel); border: 1px solid var(--panel2); border-radius: 14px; padding: 16px; margin-top: 24px; line-height: 1.6; font-size: 13px; color: var(--muted); }
+  .grafana-box code { background: var(--panel2); padding: 2px 6px; border-radius: 5px; font-family: Consolas, monospace; font-size: 12px; color: var(--text); }
+  .grafana-box a { color: var(--energy); }
+  .foot { color: var(--muted); font-size: 11px; text-align: center; padding: 20px; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Tuya Meter Dashboard</h1>
+    <div class="sub">Gráficas de consumo y series temporales</div>
+  </div>
+  <nav class="nav-tabs">
+    <a class="nav-tab" href="/">Medidores</a>
+    <a class="nav-tab active" href="/graficas">Gráficas</a>
+  </nav>
+  <div class="badges">
+    <span class="badge" id="badge-region">region: -</span>
+    <span class="badge" id="badge-conn">sin conexion</span>
+  </div>
+</header>
+
+<main>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin:10px 0">
+    <select id="sel-device" class="ctl"></select>
+    <select id="sel-var" class="ctl"></select>
+    <select id="sel-range" class="ctl">
+      <option value="60">1 hora</option>
+      <option value="360">6 horas</option>
+      <option value="1440" selected>24 horas</option>
+      <option value="10080">7 días</option>
+    </select>
+  </div>
+  <div style="background:var(--panel);border:1px solid var(--panel2);border-radius:14px;padding:16px;margin-bottom:16px">
+    <div style="color:var(--muted);font-size:12px;margin-bottom:8px" id="chart-live-title">Serie temporal</div>
+    <div class="chart-wrap"><canvas id="chart-live"></canvas></div>
+  </div>
+  <div style="background:var(--panel);border:1px solid var(--panel2);border-radius:14px;padding:16px">
+    <div style="color:var(--muted);font-size:12px;margin-bottom:8px">Consumo diario (kWh) por medidor</div>
+    <div class="chart-wrap"><canvas id="chart-daily"></canvas></div>
+  </div>
+
+  <div class="grafana-box">
+    <h3 style="color:var(--text);font-size:14px;margin-bottom:8px">Grafana</h3>
+    <p>Las mismas métricas están disponibles en <b>Grafana</b> leyendo directo de Postgres.</p>
+    <p style="margin-top:8px">Datasource: <code>PostgreSQL</code> -> Host <code>db:5432</code> / <code>localhost:5435</code> (local), DB <code>tuyameters</code>, user <code>tuya</code>.</p>
+    <p style="margin-top:8px">Tablas: <code>readings(device_id, ts, code, value, source)</code> y <code>daily_consumption(device_id, date, kwh)</code>.</p>
+    <p style="margin-top:8px">Ver <code>grafana/README.md</code> y <code>grafana/dashboards/tuya-dashboard.json</code> para el dashboard provisionado. Local: <a href="http://localhost:3000" target="_blank">http://localhost:3000</a> (admin/admin). En Coolify crea un servicio Grafana y apunta el datasource a tu Postgres de Coolify (<code>clxm6oxr80j2o0rspm1vzu77:5432</code>).</p>
+  </div>
+</main>
+<div class="foot">Datos en zona horaria America/Bogota. Fuente: nube Tuya + registro local en Postgres.</div>
+
+<script src="/static/chart.umd.min.js"></script>
+<script>
+let devices = [];
+const $ = id => document.getElementById(id);
+
+const CHART_COLORS = ["#38bdf8", "#4ade80", "#fbbf24", "#f87171", "#c084fc", "#34d399", "#fb923c", "#a3e635"];
+const VAR_OPTIONS = [
+  ["forward_energy_total", "Energía total (kWh)"],
+  ["phase_a.voltage", "Voltaje (V)"],
+  ["phase_a.electricCurrent", "Corriente (A)"],
+  ["phase_a.power", "Potencia (kW)"],
+  ["phase_a.forwardEnergy", "Energía fase (kWh)"]
+];
+let chartLive = null, chartDaily = null;
+
+function fillChartControls() {
+  const dev = $("sel-device");
+  if (dev.options.length === devices.length) return;
+  const prev = dev.value;
+  dev.innerHTML = "";
+  devices.forEach(d => {
+    const o = document.createElement("option");
+    o.value = d.id; o.textContent = d.name; dev.appendChild(o);
+  });
+  if (prev) dev.value = prev;
+  const vr = $("sel-var");
+  vr.innerHTML = "";
+  VAR_OPTIONS.forEach(([code, label]) => {
+    const o = document.createElement("option");
+    o.value = code; o.textContent = label; vr.appendChild(o);
+  });
+}
+
+async function loadChart() {
+  if (!window.Chart || !devices.length) return;
+  const deviceId = $("sel-device").value;
+  const code = $("sel-var").value;
+  const minutes = $("sel-range").value;
+  const title = $("chart-live-title");
+  try {
+    const r = await fetch(`/api/readings?device_id=${encodeURIComponent(deviceId)}&code=${encodeURIComponent(code)}&minutes=${minutes}`);
+    const d = await r.json();
+    const pts = d.points || [];
+    const labels = pts.map(p => p.ts.slice(11, 16));
+    const div = ["forward_energy_total", "balance_energy", "charge_energy"].includes(code) ? 100 : 1;
+    const vals = pts.map(p => (typeof p.value === "number") ? p.value / div : null);
+    const devName = (devices.find(x => x.id === deviceId) || {}).name || deviceId;
+    title.textContent = `Serie temporal: ${devName} · ${code} · ${pts.length} puntos`;
+    if (chartLive) chartLive.destroy();
+    chartLive = new Chart($("chart-live"), {
+      type: "line",
+      data: { labels, datasets: [{ label: code, data: vals, borderColor: "#38bdf8", backgroundColor: "rgba(56,189,248,.15)", fill: true, pointRadius: 0, tension: .25, spanGaps: true }] },
+      options: { animation: false, responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { grid: { color: "rgba(148,163,184,.15)" } }, x: { grid: { display: false }, ticks: { maxTicksLimit: 12 } } } }
+    });
+  } catch (e) { title.textContent = "Gráfica no disponible: " + e.message; }
+}
+
+async function loadDailyChart() {
+  if (!window.Chart) return;
+  try {
+    const r = await fetch("/api/history?days=7");
+    const d = await r.json();
+    if (!d.ok) return;
+    const hist = d.history || {};
+    const names = Object.keys(hist);
+    const dates = [...new Set(Object.values(hist).flat().map(x => x.date))].sort();
+    if (!dates.length) return;
+    const datasets = names.map((n, i) => ({ label: n, data: dates.map(dt => ((hist[n].find(x => x.date === dt) || {}).kwh) ?? 0), backgroundColor: CHART_COLORS[i % CHART_COLORS.length], borderRadius: 3 }));
+    if (chartDaily) chartDaily.destroy();
+    chartDaily = new Chart($("chart-daily"), {
+      type: "bar",
+      data: { labels: dates, datasets },
+      options: { animation: false, responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom", labels: { color: "#94a3b8", boxWidth: 12, font: { size: 10 } } } }, scales: { x: { grid: { display: false } }, y: { beginAtZero: true, grid: { color: "rgba(148,163,184,.15)" } } } }
+    });
+  } catch (e) {}
+}
+
+async function loadDevices() {
+  try {
+    const r = await fetch("/api/devices");
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error);
+    devices = d.devices || [];
+    document.getElementById("badge-conn").textContent = "conectado";
+    document.getElementById("badge-conn").className = "badge ok";
+    fillChartControls();
+    loadChart();
+    loadDailyChart();
+  } catch(e) {
+    document.getElementById("badge-conn").textContent = "error";
+    document.getElementById("badge-conn").className = "badge err";
+  }
+}
+
+$("sel-device").onchange = loadChart;
+$("sel-var").onchange = loadChart;
+$("sel-range").onchange = loadChart;
+
+fetch("/api/config").then(r=>r.json()).then(c=>{
+  document.getElementById("badge-region").textContent = "region: " + c.region;
+  loadDevices();
+  setInterval(loadDevices, (c.refreshSeconds||15)*1000);
+});
+</script>
+</body>
+</html>

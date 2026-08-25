@@ -36,5 +36,25 @@ services:
     volumes:
       - ./config.json:/app/config.json:ro
 
+  grafana:
+    image: grafana/grafana:11.5.2
+    container_name: tuya-grafana
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      TZ: America/Bogota
+    ports:
+      - "3002:3000"
+    volumes:
+      - grafana-storage:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+
 volumes:
   pgdata:
+  grafana-storage:

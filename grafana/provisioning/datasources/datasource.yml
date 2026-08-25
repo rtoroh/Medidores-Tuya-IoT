@@ -1,0 +1,16 @@
+apiVersion: 1
+datasources:
+  - name: tuya-postgres
+    type: postgres
+    access: proxy
+    url: db:5432
+    database: tuyameters
+    user: tuya
+    secureJsonData:
+      password: tuya
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1600
+      timescaledb: false
+    isDefault: true
+    editable: true

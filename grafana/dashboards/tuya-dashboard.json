@@ -1,0 +1,75 @@
+{
+  "title": "Tuya — Medidores",
+  "uid": "tuya-medidores",
+  "timezone": "America/Bogota",
+  "schemaVersion": 39,
+  "version": 1,
+  "templating": {
+    "list": [
+      {
+        "name": "device_id",
+        "label": "Medidor",
+        "type": "query",
+        "datasource": { "type": "postgres", "uid": "tuya-postgres" },
+        "definition": "SELECT DISTINCT device_id AS __text, device_id AS __value FROM readings ORDER BY 1",
+        "query": "SELECT DISTINCT device_id AS __text, device_id AS __value FROM readings ORDER BY 1",
+        "current": {},
+        "refresh": 1
+      },
+      {
+        "name": "code",
+        "label": "Variable",
+        "type": "custom",
+        "query": "forward_energy_total,phase_a.voltage,phase_a.electricCurrent,phase_a.power,phase_a.forwardEnergy,balance_energy",
+        "current": { "text": "forward_energy_total", "value": "forward_energy_total" },
+        "options": [
+          { "text": "forward_energy_total", "value": "forward_energy_total", "selected": true },
+          { "text": "phase_a.voltage", "value": "phase_a.voltage" },
+          { "text": "phase_a.electricCurrent", "value": "phase_a.electricCurrent" },
+          { "text": "phase_a.power", "value": "phase_a.power" },
+          { "text": "phase_a.forwardEnergy", "value": "phase_a.forwardEnergy" },
+          { "text": "balance_energy", "value": "balance_energy" }
+        ]
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Serie temporal — $code ($device_id)",
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "tuya-postgres" },
+      "targets": [
+        {
+          "rawSql": "SELECT ts AS time, CASE WHEN code IN ('forward_energy_total','balance_energy','charge_energy') THEN (value::text)::double precision / 100.0 ELSE (value::text)::double precision END AS value FROM readings WHERE code = '$code' AND device_id = '$device_id' AND ts BETWEEN $__timeFrom() AND $__timeTo() ORDER BY ts",
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": { "defaults": {}, "overrides": [] }
+    },
+    {
+      "type": "barchart",
+      "title": "Consumo diario kWh — $device_id",
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 9 },
+      "datasource": { "type": "postgres", "uid": "tuya-postgres" },
+      "targets": [
+        {
+          "rawSql": "SELECT date AS time, kwh AS value FROM daily_consumption WHERE device_id = '$device_id' AND date BETWEEN $__timeFrom()::date AND $__timeTo()::date ORDER BY date",
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Comparativa diaria — todos los medidores",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 18 },
+      "datasource": { "type": "postgres", "uid": "tuya-postgres" },
+      "targets": [
+        {
+          "rawSql": "SELECT date AS time, kwh AS value, device_id AS metric FROM daily_consumption WHERE date BETWEEN $__timeFrom()::date AND $__timeTo()::date ORDER BY date",
+          "format": "time_series"
+        }
+      ]
+    }
+  ]
+}

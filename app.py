@@ -400,6 +400,11 @@ def index():
     return render_template("index.html", refresh=CONFIG.get("refreshSeconds", 15))
 
 
+@app.route("/graficas")
+def graficas():
+    return render_template("graficas.html", refresh=CONFIG.get("refreshSeconds", 15))
+
+
 @app.route("/api/config")
 def api_config():
     configured = bool(CONFIG.get("apiKey") and CONFIG.get("apiSecret"))
