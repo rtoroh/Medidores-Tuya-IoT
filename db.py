@@ -170,6 +170,39 @@ def readings(device_id, code, minutes=60, limit=2000):
     ]
 
 
+def consumo_hoy(device_id):
+    """Serie acumulada del día: kWh desde las 00:00 Bogota, empezando en 0."""
+    today = now_bogota().date()
+    midnight = datetime.combine(today, datetime.min.time(), tzinfo=TZ)
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT base_total FROM daily_consumption WHERE device_id=%s AND date=%s",
+            (device_id, today),
+        ).fetchone()
+        base = float(row["base_total"]) if row and row["base_total"] is not None else None
+        rows = conn.execute(
+            "SELECT ts, value FROM readings WHERE device_id=%s AND code='forward_energy_total' AND ts >= %s ORDER BY ts",
+            (device_id, midnight),
+        ).fetchall()
+        if not rows:
+            return []
+        if base is None:
+            # sin fila daily aún, usa primera lectura del día como base (empieza en 0)
+            try:
+                base = float(rows[0]["value"])
+            except Exception:
+                base = 0.0
+        out = []
+        for r in rows:
+            try:
+                v = float(r["value"])
+            except Exception:
+                continue
+            kwh = max(0.0, (v - base) / 100.0)
+            out.append({"ts": r["ts"].astimezone(TZ).isoformat(timespec="seconds"), "kwh": round(kwh, 3)})
+        return out
+
+
 def row_count():
     with _conn() as conn:
         return conn.execute("SELECT COUNT(*) AS n FROM readings").fetchone()["n"]

@@ -74,9 +74,13 @@
     <div style="color:var(--muted);font-size:12px;margin-bottom:8px" id="chart-live-title">Serie temporal</div>
     <div class="chart-wrap"><canvas id="chart-live"></canvas></div>
   </div>
-  <div style="background:var(--panel);border:1px solid var(--panel2);border-radius:14px;padding:16px">
+  <div style="background:var(--panel);border:1px solid var(--panel2);border-radius:14px;padding:16px;margin-bottom:16px">
     <div style="color:var(--muted);font-size:12px;margin-bottom:8px">Consumo diario (kWh) por medidor</div>
     <div class="chart-wrap"><canvas id="chart-daily"></canvas></div>
+  </div>
+  <div style="background:var(--panel);border:1px solid var(--panel2);border-radius:14px;padding:16px">
+    <div style="color:var(--muted);font-size:12px;margin-bottom:8px" id="chart-hoy-title">Consumo acumulado hoy (desde 00:00)</div>
+    <div class="chart-wrap"><canvas id="chart-hoy"></canvas></div>
   </div>
 
   <div class="grafana-box">
@@ -102,7 +106,7 @@ const VAR_OPTIONS = [
   ["phase_a.power", "Potencia (kW)"],
   ["phase_a.forwardEnergy", "Energía fase (kWh)"]
 ];
-let chartLive = null, chartDaily = null;
+let chartLive = null, chartDaily = null, chartHoy = null;
 
 function fillChartControls() {
   const dev = $("sel-device");
@@ -166,6 +170,28 @@ async function loadDailyChart() {
   } catch (e) {}
 }
 
+async function loadConsumoHoy() {
+  if (!window.Chart || !devices.length) return;
+  const deviceId = $("sel-device").value;
+  const title = $("chart-hoy-title");
+  try {
+    const r = await fetch(`/api/consumo-hoy?device_id=${encodeURIComponent(deviceId)}`);
+    const d = await r.json();
+    const pts = d.points || [];
+    const labels = pts.map(p => p.ts.slice(11,16));
+    const vals = pts.map(p => p.kwh);
+    const devName = (devices.find(x=>x.id===deviceId)||{}).name||deviceId;
+    const total = vals.length ? vals[vals.length-1].toFixed(2) : "0.00";
+    title.textContent = `Consumo hoy — ${devName} · ${total} kWh · ${pts.length} puntos (desde 00:00)`;
+    if (chartHoy) chartHoy.destroy();
+    chartHoy = new Chart($("chart-hoy"), {
+      type: "line",
+      data: { labels, datasets: [{ label: "kWh hoy", data: vals, borderColor: "#fbbf24", backgroundColor: "rgba(251,191,36,.15)", fill: true, pointRadius: 0, tension: .25 }] },
+      options: { animation: false, responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, grid: { color: "rgba(148,163,184,.15)" } }, x: { grid: { display: false }, ticks: { maxTicksLimit: 12 } } } }
+    });
+  } catch(e) { title.textContent = "No disponible: " + e.message; }
+}
+
 async function loadDevices() {
   try {
     const r = await fetch("/api/devices");
@@ -177,13 +203,14 @@ async function loadDevices() {
     fillChartControls();
     loadChart();
     loadDailyChart();
+    loadConsumoHoy();
   } catch(e) {
     document.getElementById("badge-conn").textContent = "error";
     document.getElementById("badge-conn").className = "badge err";
   }
 }
 
-$("sel-device").onchange = loadChart;
+$("sel-device").onchange = () => { loadChart(); loadConsumoHoy(); };
 $("sel-var").onchange = loadChart;
 $("sel-range").onchange = loadChart;
 

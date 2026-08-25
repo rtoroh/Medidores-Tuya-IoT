@@ -515,6 +515,15 @@ def api_readings():
     })
 
 
+@app.route("/api/consumo-hoy")
+def api_consumo_hoy():
+    device_id = request.args.get("device_id", "")
+    if not device_id:
+        return jsonify({"ok": False, "error": "device_id requerido"}), 400
+    points = db.consumo_hoy(device_id)
+    return jsonify({"ok": True, "device_id": device_id, "points": points})
+
+
 @app.route("/api/refresh")
 def api_refresh():
     global _force_all
