@@ -108,9 +108,16 @@
   .room-code { font-size:11px; color:var(--muted); background:var(--panel2); padding:3px 8px; border-radius:999px; }
   .room-grid { display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
   @media(max-width:700px){ .room-grid{ grid-template-columns:1fr; } }
-  .meter-slot .card { margin:0; }
+  .meter-slot .card { margin:0; cursor:pointer; transition: border-color .15s; }
+  .meter-slot .card:hover { border-color: var(--energy); }
+  .meter-slot .card .hint-click { font-size:10px; color:var(--muted); text-align:center; margin-top:8px; }
   .meter-slot.empty { display:flex; align-items:center; justify-content:center; min-height:160px; border:1px dashed var(--panel2); border-radius:14px; color:var(--muted); font-size:13px; text-align:center; padding:16px; }
   .meter-slot.empty small { display:block; color:var(--muted); font-size:11px; margin-top:4px; }
+  .modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.65); align-items:center; justify-content:center; z-index:100; padding:20px; }
+  .modal.show { display:flex; }
+  .modal-content { background:var(--panel); border:1px solid var(--panel2); border-radius:16px; max-width:600px; width:100%; max-height:85vh; overflow-y:auto; padding:20px; position:relative; }
+  .modal-close { position:absolute; top:10px; right:14px; font-size:22px; color:var(--muted); cursor:pointer; line-height:1; }
+  .modal-close:hover { color:var(--text); }
 </style>
 </head>
 <body>
@@ -163,6 +170,13 @@
 </main>
 <div class="foot">Los datos provienen de la nube de Tuya (ultimo estado reportado por cada dispositivo).</div>
 
+<div id="modal" class="modal" onclick="if(event.target===this)closeModal()">
+  <div class="modal-content">
+    <span class="modal-close" id="modal-close" onclick="closeModal()">&times;</span>
+    <div id="modal-body"></div>
+  </div>
+</div>
+
 <script>
 const REFRESH = {{ refresh }};
 let devices = [];
@@ -189,10 +203,14 @@ function timeAgo(ts) {
   return "hace " + m + "m";
 }
 
-function card(d) {
+const SUMMARY_CODES = new Set(["forward_energy_total", "phase_a.voltage", "phase_a.electricCurrent", "phase_a.power"]);
+
+function card(d, compact=false) {
   const kind = d.kind;
   const online = d.online;
-  const rows = (d.readings || []).map(r => {
+  let readings = d.readings || [];
+  if (compact) readings = readings.filter(r => SUMMARY_CODES.has(r.code));
+  const rows = readings.map(r => {
     const v = (r.value === null || r.value === undefined) ? "-" : String(r.value);
     const short = v.length > 45 ? v.slice(0, 45) + "..." : v;
     const title = v.length > 45 ? ` title="${v.replace(/"/g, "&quot;")}"` : "";
@@ -205,23 +223,36 @@ function card(d) {
     ? `<span class="src-${d.source === "LAN" ? "lan" : "cloud"}">${d.source === "LAN" ? "&#9673; lectura local" : "&#9672; ultimo reportado"}</span>`
     : "";
   const raw = JSON.stringify(d.readings.map(r => ({ code: r.code, value: r.raw })));
+  const clickHint = compact ? `<div class="hint-click">Clic para ver detalle completo</div>` : "";
+  const detailsHtml = compact ? "" : `<details><summary>JSON crudo</summary><pre>${raw}</pre></details>`;
+  const tableHtml = readings.length ? `<table>${rows}</table>` : `<div class="empty">sin datos</div>`;
   return `
   <div class="card k-${kind}">
     <span class="online ${online ? "on" : "off"}">${online ? "en linea" : "sin conexion"}</span>
     <div class="name">${d.name}</div>
     <div class="meta">${meta}</div>
-    ${d.readings.length ? `<table>${rows}</table>` : `<div class="empty">sin datos</div>`}
+    ${tableHtml}
     ${errorHtml}
     <div class="time">${srcHtml} &middot; ${timeAgo(d.fetchedAt)}</div>
-    <details><summary>JSON crudo</summary><pre>${raw}</pre></details>
+    ${clickHint}
+    ${detailsHtml}
   </div>`;
 }
+
+let deviceByName = {};
+function openDetail(name) {
+  const d = deviceByName[name];
+  if (!d) return;
+  $("modal-body").innerHTML = card(d, false);
+  $("modal").classList.add("show");
+}
+function closeModal() { $("modal").classList.remove("show"); }
 
 let rooms = [];
 
 function meterSlot(m, voltage) {
   if (!m) return `<div class="meter-slot empty"><div>⚡ ${voltage}V<br><small>No instalado</small><small style="font-size:10px">sin medidor vinculado</small></div></div>`;
-  return `<div class="meter-slot">${card(m)}</div>`;
+  return `<div class="meter-slot" onclick="openDetail('${m.name}')">${card(m, true)}</div>`;
 }
 
 function render() {
@@ -233,6 +264,8 @@ function render() {
     return;
   }
   $("status-line").style.display = "none";
+  deviceByName = {};
+  rooms.forEach(r => { if (r.m110) deviceByName[r.m110.name]=r.m110; if (r.m220) deviceByName[r.m220.name]=r.m220; });
   box.innerHTML = rooms.map(r => `
     <div class="room-card">
       <div class="room-header">
@@ -321,6 +354,8 @@ async function loadHistory() {
     if (h.ok) renderHistory(h);
   } catch (e) { /* no bloquea el dashboard */ }
 }
+
+document.addEventListener("keydown", e => { if (e.key==="Escape") closeModal(); });
 
 $("btn-refresh").onclick = () => load(true);
 $("btn-reload").onclick = async () => {
