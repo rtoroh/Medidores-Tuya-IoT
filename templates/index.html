@@ -182,7 +182,18 @@
 
 <script>
 const REFRESH = {{ refresh }};
-let devices = [];
+const INITIAL_ROOMS = {{ initial_rooms|tojson }};
+let rooms = INITIAL_ROOMS || [];
+// Fallback a caché local si el servidor aún no tenía datos (cold start)
+if (!rooms.length) {
+  try {
+    const cached = JSON.parse(localStorage.getItem("roomsCache")||"null");
+    if (cached && cached.rooms && Date.now() - cached.ts < 5*60*1000) {
+      rooms = cached.rooms;
+    }
+  } catch(e) {}
+}
+let devices = rooms.flatMap(r => [r.m110, r.m220].filter(Boolean));
 let lastFull = 0;
 
 const $ = id => document.getElementById(id);
@@ -308,6 +319,7 @@ async function load(forceRefresh) {
     }
     setBadgeConn(true, "conectado a la nube Tuya");
     render();
+    try { localStorage.setItem("roomsCache", JSON.stringify({ts: Date.now(), rooms})); } catch(e){}
   } catch (e) {
     setBadgeConn(false, "error de conexion");
     $("status-line").textContent = "No se pudo consultar la nube Tuya: " + e.message;
@@ -376,6 +388,11 @@ $("btn-reload").onclick = async () => {
   devices = [];
   await loadConfig();
 };
+
+// Render instantáneo si viene del servidor o caché local
+if (rooms.length) {
+  try { render(); setBadgeConn(true, "cargado instantáneo"); } catch(e){}
+}
 
 // auto-refresh
 setInterval(() => {
