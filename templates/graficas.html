@@ -91,10 +91,8 @@
 
 <script src="/static/chart.umd.min.js"></script>
 <script>
-const INITIAL_DEVICES = {{ initial_devices|tojson }};
-let devices = INITIAL_DEVICES || [];
+let devices = [];
 const $ = id => document.getElementById(id);
-if (devices.length) { setTimeout(()=>{ try{ fillChartControls(); loadChart(); loadDailyChart(); }catch(e){} },0); }
 
 const CHART_COLORS = ["#38bdf8", "#4ade80", "#fbbf24", "#f87171", "#c084fc", "#34d399", "#fb923c", "#a3e635"];
 const VAR_OPTIONS = [
