@@ -208,6 +208,16 @@ function timeAgo(ts) {
 
 const SUMMARY_CODES = new Set(["forward_energy_total", "phase_a.voltage", "phase_a.electricCurrent", "phase_a.power"]);
 
+// --- caché local para pintado instantáneo ---
+let rooms = [];
+try {
+  const c = JSON.parse(localStorage.getItem("roomsCache")||"null");
+  if (c && c.rooms && Array.isArray(c.rooms) && c.rooms.length) {
+    rooms = c.rooms;
+    devices = rooms.flatMap(r => [r.m110, r.m220].filter(Boolean));
+  }
+} catch(e) {}
+
 function card(d, compact=false) {
   const kind = d.kind;
   const online = d.online;
@@ -250,8 +260,6 @@ function openDetail(name) {
   $("modal").classList.add("show");
 }
 function closeModal() { $("modal").classList.remove("show"); }
-
-let rooms = [];
 
 function meterSlot(m, voltage) {
   if (!m) return `<div class="meter-slot empty"><div>⚡ ${voltage}V<br><small>No instalado</small><small style="font-size:10px">sin medidor vinculado</small></div></div>`;
@@ -308,6 +316,7 @@ async function load(forceRefresh) {
     }
     setBadgeConn(true, "conectado a la nube Tuya");
     render();
+    try { localStorage.setItem("roomsCache", JSON.stringify({ts: Date.now(), rooms})); } catch(e){}
   } catch (e) {
     setBadgeConn(false, "error de conexion");
     $("status-line").textContent = "No se pudo consultar la nube Tuya: " + e.message;
@@ -376,6 +385,11 @@ $("btn-reload").onclick = async () => {
   devices = [];
   await loadConfig();
 };
+
+// pintado instantáneo desde caché local (si existe) antes de esperar a la red
+if (rooms.length) {
+  try { render(); setBadgeConn(true, "cargado desde caché — actualizando..."); } catch(e){}
+}
 
 // auto-refresh
 setInterval(() => {
