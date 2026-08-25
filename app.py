@@ -161,6 +161,14 @@ CATEGORY_LABELS = {
     "zndb": "Medidor de energia (WiFi)",
 }
 
+ROOM_ORDER = ["h01","h02","h03","h04","h05","h06","h07","h08","h09","h10","s01","s02"]
+ROOM_LABELS = {
+    "h01": "Habitación 01", "h02": "Habitación 02", "h03": "Habitación 03",
+    "h04": "Habitación 04", "h05": "Habitación 05", "h06": "Habitación 06",
+    "h07": "Habitación 07", "h08": "Habitación 08", "h09": "Habitación 09",
+    "h10": "Habitación 10", "s01": "Suite 01", "s02": "Suite 02",
+}
+
 
 def classify(status_codes):
     codes = set(status_codes)
@@ -426,6 +434,23 @@ def api_devices():
         return jsonify({"ok": False, "error": str(e)}), 502
     views = [build_device_view(d) for d in devices]
     return jsonify({"ok": True, "devices": views})
+
+
+@app.route("/api/rooms")
+def api_rooms():
+    try:
+        devices = fetch_devices()
+    except TuyaReaderError as e:
+        return jsonify({"ok": False, "error": str(e)}), 502
+    views = [build_device_view(d) for d in devices]
+    by_name = {v["name"].lower(): v for v in views}
+    rooms = []
+    for code in ROOM_ORDER:
+        label = ROOM_LABELS.get(code, code.upper())
+        m110 = by_name.get(f"{code}_110")
+        m220 = by_name.get(f"{code}_220")
+        rooms.append({"room": code, "label": label, "m110": m110, "m220": m220})
+    return jsonify({"ok": True, "rooms": rooms})
 
 
 @app.route("/api/history")

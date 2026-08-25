@@ -102,6 +102,15 @@
   .nav-tab { padding:6px 14px; border-radius:8px; text-decoration:none; font-size:13px; border:1px solid transparent; color:var(--muted); }
   .nav-tab.active { background:var(--panel2); color:var(--text); border-color:#475569; }
   .nav-tab:hover { background:#334155; color:var(--text); }
+  .room-card { background:var(--panel); border:1px solid var(--panel2); border-radius:14px; padding:16px; margin-bottom:16px; }
+  .room-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; border-bottom:1px solid var(--panel2); padding-bottom:8px; }
+  .room-title { font-size:15px; font-weight:700; }
+  .room-code { font-size:11px; color:var(--muted); background:var(--panel2); padding:3px 8px; border-radius:999px; }
+  .room-grid { display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
+  @media(max-width:700px){ .room-grid{ grid-template-columns:1fr; } }
+  .meter-slot .card { margin:0; }
+  .meter-slot.empty { display:flex; align-items:center; justify-content:center; min-height:160px; border:1px dashed var(--panel2); border-radius:14px; color:var(--muted); font-size:13px; text-align:center; padding:16px; }
+  .meter-slot.empty small { display:block; color:var(--muted); font-size:11px; margin-top:4px; }
 </style>
 </head>
 <body>
@@ -140,7 +149,7 @@
   </div>
 
   <div id="status-line" class="empty">Cargando dispositivos...</div>
-  <div class="grid" id="grid"></div>
+  <div id="rooms"></div>
 
   <div style="margin-top:28px">
     <h2 style="font-size:16px;color:var(--energy);margin-bottom:4px">Historico de consumo (kWh/dia)</h2>
@@ -208,26 +217,49 @@ function card(d) {
   </div>`;
 }
 
+let rooms = [];
+
+function meterSlot(m, voltage) {
+  if (!m) return `<div class="meter-slot empty"><div>⚡ ${voltage}V<br><small>No instalado</small><small style="font-size:10px">sin medidor vinculado</small></div></div>`;
+  return `<div class="meter-slot">${card(m)}</div>`;
+}
+
 function render() {
-  const grid = $("grid");
-  if (!devices.length) {
+  const box = $("rooms");
+  if (!rooms.length) {
     $("status-line").textContent = "No hay dispositivos. Verifica tus credenciales y que la cuenta de la app tenga los medidores vinculados.";
     $("status-line").style.display = "block";
-    grid.innerHTML = "";
+    box.innerHTML = "";
     return;
   }
   $("status-line").style.display = "none";
-  const sorted = devices.slice().sort((a,b) => (a.kind.localeCompare(b.kind)) || a.name.localeCompare(b.name));
-  grid.innerHTML = sorted.map(card).join("");
+  box.innerHTML = rooms.map(r => `
+    <div class="room-card">
+      <div class="room-header">
+        <span class="room-title">${r.label}</span>
+        <span class="room-code">${r.room.toUpperCase()}</span>
+      </div>
+      <div class="room-grid">
+        ${meterSlot(r.m110, "110")}
+        ${meterSlot(r.m220, "220")}
+      </div>
+    </div>
+  `).join("");
 }
 
 async function load(forceRefresh) {
-  const url = forceRefresh ? "/api/refresh" : "/api/devices";
+  const url = forceRefresh ? "/api/refresh" : "/api/rooms";
   try {
     const resp = await fetch(url);
     const data = await resp.json();
     if (!data.ok) throw new Error(data.error || "error");
-    devices = data.devices || [];
+    if (data.rooms) {
+      rooms = data.rooms;
+      devices = rooms.flatMap(r => [r.m110, r.m220].filter(Boolean));
+    } else {
+      devices = data.devices || [];
+      rooms = [];
+    }
     setBadgeConn(true, "conectado a la nube Tuya");
     render();
   } catch (e) {
