@@ -103,9 +103,12 @@
   .nav-tab.active { background:var(--panel2); color:var(--text); border-color:#475569; }
   .nav-tab:hover { background:#334155; color:var(--text); }
   .room-card { background:var(--panel); border:1px solid var(--panel2); border-radius:14px; padding:16px; margin-bottom:16px; }
-  .room-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; border-bottom:1px solid var(--panel2); padding-bottom:8px; }
+  .room-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; border-bottom:1px solid var(--panel2); padding-bottom:8px; gap:8px; flex-wrap:wrap; }
   .room-title { font-size:15px; font-weight:700; }
   .room-code { font-size:11px; color:var(--muted); background:var(--panel2); padding:3px 8px; border-radius:999px; }
+  .room-daily { display:flex; gap:6px; align-items:center; flex-wrap:wrap; font-size:11px; }
+  .daily-pill { background:rgba(56,189,248,.12); color:var(--energy); border:1px solid rgba(56,189,248,.25); padding:3px 8px; border-radius:999px; font-weight:600; }
+  .daily-pill.off { background:var(--panel2); color:var(--muted); border-color:var(--panel2); }
   .room-grid { display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
   @media(max-width:700px){ .room-grid{ grid-template-columns:1fr; } }
   .meter-slot .card { margin:0; cursor:pointer; transition: border-color .15s; }
@@ -266,10 +269,19 @@ function render() {
   $("status-line").style.display = "none";
   deviceByName = {};
   rooms.forEach(r => { if (r.m110) deviceByName[r.m110.name]=r.m110; if (r.m220) deviceByName[r.m220.name]=r.m220; });
-  box.innerHTML = rooms.map(r => `
+  box.innerHTML = rooms.map(r => {
+    const k110 = r.k110, k220 = r.k220;
+    const pill110 = k110 === null || k110 === undefined
+      ? `<span class="daily-pill off">110V: —</span>`
+      : `<span class="daily-pill">110V: ${k110.toFixed(2)} kWh hoy</span>`;
+    const pill220 = k220 === null || k220 === undefined
+      ? `<span class="daily-pill off">220V: —</span>`
+      : `<span class="daily-pill">220V: ${k220.toFixed(2)} kWh hoy</span>`;
+    return `
     <div class="room-card">
       <div class="room-header">
         <span class="room-title">${r.label}</span>
+        <span class="room-daily">${pill110}${pill220}</span>
         <span class="room-code">${r.room.toUpperCase()}</span>
       </div>
       <div class="room-grid">
@@ -277,7 +289,8 @@ function render() {
         ${meterSlot(r.m220, "220")}
       </div>
     </div>
-  `).join("");
+  `;
+  }).join("");
 }
 
 async function load(forceRefresh) {

@@ -444,12 +444,23 @@ def api_rooms():
         return jsonify({"ok": False, "error": str(e)}), 502
     views = [build_device_view(d) for d in devices]
     by_name = {v["name"].lower(): v for v in views}
+    # consumo del día (desde las 00:00 America/Bogota) por medidor
+    ids = [d.get("id") for d in devices]
+    try:
+        daily = db.daily(device_ids=ids, days=1) if ids else {}
+    except Exception:
+        daily = {}
+    kwh_by_id = {}
+    for did, entries in daily.items():
+        kwh_by_id[did] = entries[-1]["kwh"] if entries else 0.0
     rooms = []
     for code in ROOM_ORDER:
         label = ROOM_LABELS.get(code, code.upper())
         m110 = by_name.get(f"{code}_110")
         m220 = by_name.get(f"{code}_220")
-        rooms.append({"room": code, "label": label, "m110": m110, "m220": m220})
+        k110 = kwh_by_id.get(m110["id"], 0.0) if m110 else None
+        k220 = kwh_by_id.get(m220["id"], 0.0) if m220 else None
+        rooms.append({"room": code, "label": label, "m110": m110, "m220": m220, "k110": k110, "k220": k220})
     return jsonify({"ok": True, "rooms": rooms})
 
 
