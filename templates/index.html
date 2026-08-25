@@ -326,15 +326,27 @@ async function load(forceRefresh) {
 
 async function loadConfig() {
   try {
-    const r = await fetch("/api/config");
-    const c = await r.json();
+    // config y rooms en paralelo — no secuencial
+    const pConfig = fetch("/api/config").then(r=>r.json());
+    const pRooms = fetch("/api/rooms").then(r=>r.json()).catch(()=>null);
+    const c = await pConfig;
     $("badge-region").textContent = "region: " + c.region;
     $("badge-refresh").textContent = "auto-refresh: " + c.refreshSeconds + "s";
     setHint(c.configured);
-    if (c.configured) await load(true);
-    else {
+    if (!c.configured) {
       $("status-line").textContent = "Esperando credenciales en config.json...";
       $("status-line").style.display = "block";
+      return;
+    }
+    const data = await pRooms;
+    if (data && data.ok && data.rooms) {
+      rooms = data.rooms;
+      devices = rooms.flatMap(r => [r.m110, r.m220].filter(Boolean));
+      setBadgeConn(true, "conectado a la nube Tuya");
+      render();
+      try { localStorage.setItem("roomsCache", JSON.stringify({ts: Date.now(), rooms})); } catch(e){}
+    } else {
+      await load(true);
     }
   } catch (e) {
     setBadgeConn(false, "sin servidor");
